@@ -32,3 +32,22 @@ The raw C header is vendored at `ladybug/lbug.h` for signature compatibility.
 v run examples/basic_usage.v
 ```
 
+## V Shell
+
+An interactive Ladybug shell is available at `shell-v/main.v` with:
+- colored prompt/output
+- history navigation + line editing (via V `readline`)
+- tab autocomplete (shell commands + Cypher keywords)
+- direct query args (`-q/--query`) for non-interactive runs
+
+Run interactively:
+
+```bash
+v run shell-v/main.v -- test.db
+```
+
+Run a query directly (no stdin piping):
+
+```bash
+v run shell-v/main.v -- test.db -q 'RETURN "hello" AS msg;'
+```

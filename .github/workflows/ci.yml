@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: vlang/setup-v@v1
+        with:
+          check-latest: true
+
+      - name: Download liblbug
+        run: bash scripts/download-liblbug.sh
+
+      - name: Run tests
+        run: v test ./tests/

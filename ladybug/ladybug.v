@@ -299,6 +299,10 @@ pub fn (conn &Connection) prepare(query string) !PreparedStatement {
 	}
 	state := C.lbug_connection_prepare(&conn.raw, query.str, &stmt.raw)
 	if state != lbug_success {
+		msg := stmt.error_message()
+		if msg.len > 0 {
+			return error(msg)
+		}
 		return error('failed to prepare query')
 	}
 	if !stmt.is_success() {
@@ -380,7 +384,11 @@ pub fn (conn &Connection) query(query string) !QueryResult {
 	mut result := QueryResult{}
 	state := C.lbug_connection_query(&conn.raw, query.str, &result.raw)
 	if state != lbug_success {
-		return error('query failed: ${query}')
+		msg := result.error_message()
+		if msg.len > 0 {
+			return error(msg)
+		}
+		return error('query failed')
 	}
 	if !result.is_success() {
 		return error(result.error_message())
@@ -392,6 +400,10 @@ pub fn (conn &Connection) execute(stmt &PreparedStatement) !QueryResult {
 	mut result := QueryResult{}
 	state := C.lbug_connection_execute(&conn.raw, unsafe { &stmt.raw }, &result.raw)
 	if state != lbug_success {
+		msg := result.error_message()
+		if msg.len > 0 {
+			return error(msg)
+		}
 		return error('failed to execute prepared statement')
 	}
 	if !result.is_success() {
