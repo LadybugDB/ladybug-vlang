@@ -154,9 +154,11 @@ fn C.lbug_value_destroy(value &C.lbug_value)
 fn C.lbug_value_is_null(value &C.lbug_value) bool
 fn C.lbug_value_get_bool(value &C.lbug_value, out_result &bool) int
 fn C.lbug_value_get_int64(value &C.lbug_value, out_result &i64) int
+fn C.lbug_value_get_uint64(value &C.lbug_value, out_result &u64) int
 fn C.lbug_value_get_int32(value &C.lbug_value, out_result &i32) int
 fn C.lbug_value_get_double(value &C.lbug_value, out_result &f64) int
 fn C.lbug_value_get_float(value &C.lbug_value, out_result &f32) int
+fn C.lbug_value_get_internal_id(value &C.lbug_value, out_result &C.lbug_internal_id_t) int
 fn C.lbug_value_get_string(value &C.lbug_value, out_result &&char) int
 
 fn C.lbug_query_summary_destroy(query_summary &C.lbug_query_summary)
@@ -554,6 +556,15 @@ pub fn (value &Value) int64() !i64 {
 	return out
 }
 
+pub fn (value &Value) uint64() !u64 {
+	mut out := u64(0)
+	state := C.lbug_value_get_uint64(value.cptr(), &out)
+	if state != lbug_success {
+		return error('value is not UINT64')
+	}
+	return out
+}
+
 pub fn (value &Value) int32() !i32 {
 	mut out := i32(0)
 	state := C.lbug_value_get_int32(value.cptr(), &out)
@@ -590,6 +601,15 @@ pub fn (value &Value) string() !string {
 	text := unsafe { cstring_to_vstring(out) }
 	C.lbug_destroy_string(out)
 	return text
+}
+
+pub fn (value &Value) internal_id_text() !string {
+	mut out := C.lbug_internal_id_t{}
+	state := C.lbug_value_get_internal_id(value.cptr(), &out)
+	if state != lbug_success {
+		return error('value is not INTERNAL_ID')
+	}
+	return '${out.table_id}:${out.offset}'
 }
 
 pub fn create_null_value() !Value {

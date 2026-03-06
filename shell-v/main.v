@@ -48,10 +48,24 @@ const cypher_keywords = [
 
 const create_prefixes = ['CREATE ', 'DROP ', 'ALTER ']
 
+enum CompletionContext {
+	normal
+	table_name
+	property_name
+}
+
 struct CompletionEngine {
 mut:
-	table_names    []string
-	property_names []string
+	table_names      []string
+	node_table_names []string
+	rel_table_names  []string
+	property_names   []string
+}
+
+enum TableLookupScope {
+	any
+	node
+	rel
 }
 
 enum OutputMode {
@@ -667,6 +681,9 @@ fn value_to_text(v ladybug.Value) string {
 	if x := v.int64() {
 		return x.str()
 	}
+	if x := v.uint64() {
+		return x.str()
+	}
 	if x := v.int32() {
 		return x.str()
 	}
@@ -680,6 +697,9 @@ fn value_to_text(v ladybug.Value) string {
 		return if x { 'true' } else { 'false' }
 	}
 	if x := v.string() {
+		return x
+	}
+	if x := v.internal_id_text() {
 		return x
 	}
 	return '<value>'
@@ -781,7 +801,11 @@ fn (mut s Shell) append_history(line string) {
 
 fn (c &CompletionEngine) complete(prefix string) []string {
 	if prefix.len == 0 {
-		return []string{}
+		mut all := []string{}
+		all << c.table_names
+		all << c.property_names
+		all << cypher_keywords
+		return build_completion_options('', '', all)
 	}
 	base, token := split_completion_input(prefix)
 	trimmed := prefix.trim_space()
@@ -795,12 +819,25 @@ fn (c &CompletionEngine) complete(prefix string) []string {
 		return commands
 	}
 	kw := legal_keyword_candidates(prefix)
+	context := completion_context(base, token)
+	if context == .table_name {
+		scope := table_lookup_scope(base, token)
+		candidates := match scope {
+			.node { c.node_table_names }
+			.rel { c.rel_table_names }
+			.any { c.table_names }
+		}
+		return build_completion_options(base, token, candidates)
+	}
+	if context == .property_name {
+		return build_completion_options(base, token, c.property_names)
+	}
 	mut all := []string{}
 	all << kw
-	if should_suggest_tables(prefix) {
+	if should_suggest_tables(base, token) {
 		all << c.table_names
 	}
-	if should_suggest_properties(prefix) {
+	if should_suggest_properties(base, token) {
 		all << c.property_names
 	}
 	all << cypher_keywords
@@ -825,6 +862,7 @@ fn split_completion_input(input string) (string, string) {
 }
 
 fn build_completion_options(base string, token string, candidates []string) []string {
+	token_prefix, token_filter := completion_token_context(token)
 	mut seen := map[string]bool{}
 	mut out := []string{}
 	for raw in candidates {
@@ -832,10 +870,10 @@ fn build_completion_options(base string, token string, candidates []string) []st
 		if candidate.len == 0 {
 			continue
 		}
-		if token.len > 0 && !starts_with_ci(candidate, token) {
+		if token_filter.len > 0 && !starts_with_ci(candidate, token_filter) {
 			continue
 		}
-		full := base + candidate
+		full := base + token_prefix + candidate
 		if full in seen {
 			continue
 		}
@@ -843,6 +881,68 @@ fn build_completion_options(base string, token string, candidates []string) []st
 		out << full
 	}
 	return out
+}
+
+fn completion_token_context(token string) (string, string) {
+	last_colon := token.last_index(':') or { -1 }
+	last_dot := token.last_index('.') or { -1 }
+	last_sep := if last_colon > last_dot { last_colon } else { last_dot }
+	if last_sep < 0 {
+		return '', token
+	}
+	return token[..last_sep + 1], token[last_sep + 1..]
+}
+
+fn completion_context(base string, token string) CompletionContext {
+	last_colon := token.last_index(':') or { -1 }
+	last_dot := token.last_index('.') or { -1 }
+	if last_colon > last_dot {
+		return .table_name
+	}
+	if last_dot > last_colon {
+		return .property_name
+	}
+	trimmed_base := base.trim_right(' \t')
+	if trimmed_base.ends_with(':') {
+		return .table_name
+	}
+	if trimmed_base.ends_with('.') {
+		return .property_name
+	}
+	return .normal
+}
+
+fn table_lookup_scope(base string, token string) TableLookupScope {
+	mut ctx := base + token
+	mut colon_pos := -1
+	last_colon := token.last_index(':') or { -1 }
+	if last_colon >= 0 {
+		colon_pos = base.len + last_colon
+	} else {
+		trimmed := ctx.trim_right(' \t')
+		if trimmed.ends_with(':') {
+			ctx = trimmed
+			colon_pos = ctx.len - 1
+		}
+	}
+	if colon_pos <= 0 || colon_pos > ctx.len - 1 {
+		return .any
+	}
+	mut i := colon_pos - 1
+	for i >= 0 {
+		c := ctx[i]
+		if c == `[` {
+			return .rel
+		}
+		if c == `(` {
+			return .node
+		}
+		if c == `]` || c == `)` {
+			break
+		}
+		i--
+	}
+	return .any
 }
 
 fn starts_with_ci(s string, p string) bool {
@@ -887,17 +987,22 @@ fn legal_keyword_candidates(prefix string) []string {
 	}
 }
 
-fn should_suggest_tables(prefix string) bool {
-	upper := prefix.to_upper()
-	return upper.contains(':') || upper.ends_with(' FROM ') || upper.ends_with(' TO ')
-		|| upper.ends_with(' TABLE ') || upper.ends_with(' GRAPH ')
-		|| upper.ends_with('MATCH (') || upper.ends_with('MERGE (')
+fn should_suggest_tables(base string, token string) bool {
+	upper_ctx := (base + token).to_upper()
+	upper_base := base.to_upper()
+	upper_token := token.to_upper()
+	return upper_token.contains(':') || upper_ctx.contains(':') || upper_base.ends_with(' FROM ')
+		|| upper_base.ends_with(' TO ') || upper_base.ends_with(' TABLE ')
+		|| upper_base.ends_with(' GRAPH ') || upper_base.ends_with('MATCH (')
+		|| upper_base.ends_with('MERGE (')
 }
 
-fn should_suggest_properties(prefix string) bool {
-	upper := prefix.to_upper()
-	return upper.ends_with('.') || upper.contains(' RETURN ') || upper.contains(' WHERE ')
-		|| upper.contains(' SET ') || upper.contains(' ORDER BY ')
+fn should_suggest_properties(base string, token string) bool {
+	upper_ctx := (base + token).to_upper()
+	upper_base := base.to_upper()
+	return token.ends_with('.') || token.contains('.') || upper_base.contains(' RETURN ')
+		|| upper_base.contains(' WHERE ') || upper_base.contains(' SET ')
+		|| upper_base.contains(' ORDER BY ') || upper_ctx.ends_with('.')
 }
 
 fn tokenize_words(text string) []string {
@@ -922,12 +1027,17 @@ fn tokenize_words(text string) []string {
 
 fn (mut s Shell) refresh_completion_catalog() {
 	mut table_names := []string{}
+	mut node_table_names := []string{}
+	mut rel_table_names := []string{}
 	mut property_names := []string{}
 	mut seen_tables := map[string]bool{}
+	mut seen_node_tables := map[string]bool{}
+	mut seen_rel_tables := map[string]bool{}
 	mut seen_props := map[string]bool{}
 	mut tables_result := s.conn.query('CALL show_tables() RETURN *;') or { return }
 	headers := tables_result.column_names() or { []string{} }
 	name_idx := headers.index('name')
+	type_idx := table_type_index(headers)
 	for tables_result.has_next() {
 		mut tuple := tables_result.next_tuple() or { break }
 		if name_idx >= 0 {
@@ -937,9 +1047,26 @@ fn (mut s Shell) refresh_completion_catalog() {
 			}
 			table_name := value_to_text(value).trim_space()
 			value.close()
+			mut table_type := lbug_unknown_table_type
+			if type_idx >= 0 {
+				mut type_value := tuple.value(u64(type_idx)) or {
+					tuple.close()
+					continue
+				}
+				table_type = value_to_text(type_value).trim_space().to_upper()
+				type_value.close()
+			}
 			if table_name.len > 0 && table_name !in seen_tables {
 				table_names << table_name
 				seen_tables[table_name] = true
+				if table_type.contains('NODE') && table_name !in seen_node_tables {
+					node_table_names << table_name
+					seen_node_tables[table_name] = true
+				}
+				if table_type.contains('REL') && table_name !in seen_rel_tables {
+					rel_table_names << table_name
+					seen_rel_tables[table_name] = true
+				}
 				s.collect_table_properties(table_name, mut property_names, mut seen_props)
 			}
 		}
@@ -947,7 +1074,29 @@ fn (mut s Shell) refresh_completion_catalog() {
 	}
 	tables_result.close()
 	s.completion.table_names = table_names
+	s.completion.node_table_names = if node_table_names.len > 0 {
+		node_table_names
+	} else {
+		table_names
+	}
+	s.completion.rel_table_names = if rel_table_names.len > 0 {
+		rel_table_names
+	} else {
+		table_names
+	}
 	s.completion.property_names = property_names
+}
+
+const lbug_unknown_table_type = '<UNKNOWN>'
+
+fn table_type_index(headers []string) int {
+	for name in ['type', 'table_type', 'tabletype', 'kind', 'table_kind', 'entity_type'] {
+		idx := headers.index(name)
+		if idx >= 0 {
+			return idx
+		}
+	}
+	return -1
 }
 
 fn (s &Shell) collect_table_properties(table_name string, mut out []string, mut seen map[string]bool) {
@@ -973,7 +1122,6 @@ fn (s &Shell) collect_table_properties(table_name string, mut out []string, mut 
 		if prop.len > 0 && prop !in seen {
 			seen[prop] = true
 			out << prop
-			out << '${table_name}.${prop}'
 		}
 		tuple.close()
 	}
