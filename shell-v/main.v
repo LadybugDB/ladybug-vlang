@@ -11,19 +11,19 @@ const continuation_prompt = '..> '
 const default_history_name = 'history.txt'
 
 const shell_commands = [
-	':help',
-	':clear',
-	':quit',
-	':exit',
-	':max_rows',
-	':mode',
-	':stats',
-	':schema',
-	':multiline',
-	':singleline',
-	':highlight',
-	':render_errors',
-	':render_completion',
+	'.help',
+	'.clear',
+	'.quit',
+	'.exit',
+	'.max_rows',
+	'.mode',
+	'.stats',
+	'.schema',
+	'.multiline',
+	'.singleline',
+	'.highlight',
+	'.render_errors',
+	'.render_completion',
 ]
 
 const cypher_keywords = [
@@ -125,13 +125,17 @@ fn main_impl() ! {
 
 fn parse_args(args []string) !ShellConfig {
 	mut cfg := ShellConfig{}
+	mut positional := []string{}
 	mut i := 0
 	for i < args.len {
 		arg := args[i]
 		l := arg.to_lower()
 		match l {
 			'--' {
-				// `v run file.v -- args...` passes this separator through.
+				if i + 1 < args.len {
+					positional << args[i + 1..]
+				}
+				break
 			}
 			'-h', '--help' {
 				print_usage()
@@ -168,28 +172,45 @@ fn parse_args(args []string) !ShellConfig {
 				}
 				cfg.init_file = args[i]
 			}
-			'-q', '--query' {
-				i++
-				if i >= args.len {
-					return error('flag ${arg} requires an argument')
-				}
-				cfg.query_args << args[i]
-			}
 			else {
 				if arg.starts_with('-') {
 					return error('unknown option: ${arg}')
 				}
-				if cfg.database_path == ':memory:' {
-					cfg.database_path = arg
-				} else {
-					cfg.query_args << arg
-				}
+				positional << args[i..]
+				break
 			}
 		}
 		i++
 	}
+	if positional.len > 0 {
+		if cfg.database_path == ':memory:' && !is_query_token(positional[0]) {
+			cfg.database_path = positional[0]
+			if positional.len > 1 {
+				cfg.query_args << positional[1..].join(' ')
+			}
+		} else {
+			cfg.query_args << positional.join(' ')
+		}
+	}
 	cfg.history_path = resolve_history_file(cfg.history_path)
 	return cfg
+}
+
+fn is_query_token(token string) bool {
+	upper := token.trim_space().to_upper()
+	if upper.len == 0 {
+		return false
+	}
+	if upper.starts_with('.') {
+		return true
+	}
+	for kw in ['CALL', 'CREATE', 'DELETE', 'DETACH', 'DROP', 'MATCH', 'MERGE', 'OPTIONAL', 'RETURN',
+		'SET', 'UNION', 'UNWIND', 'WITH', 'WHERE', 'ORDER', 'LIMIT', 'SKIP', 'LOAD'] {
+		if upper.starts_with(kw) {
+			return true
+		}
+	}
+	return upper.contains(';')
 }
 
 fn resolve_history_file(path_arg string) string {
@@ -232,7 +253,7 @@ fn parse_mode(name string) !OutputMode {
 
 fn print_usage() {
 	println('Lbug shell (V implementation)')
-	println('Usage: v run shell-v/main.v -- [database_path] [options]')
+	println('Usage: lbug [options] [database_path] [query]')
 	println('Options:')
 	println('  -h, --help               Show this help message')
 	println('  -v, --version            Print version and exit')
@@ -241,7 +262,7 @@ fn print_usage() {
 	println('  -m, --mode MODE          Set output mode (box|table|column|csv|tsv|list|line|json|jsonlines|trash)')
 	println('  -s, --no_stats           Disable query stats')
 	println('  -i, --init FILE          Run startup commands from file (default: .lbugrc)')
-	println('  -q, --query QUERY        Execute query directly (repeatable)')
+	println('  QUERY                    Optional query to execute directly (what is left after option parsing)')
 }
 
 fn new_shell(cfg ShellConfig) !Shell {
@@ -343,7 +364,7 @@ fn (mut s Shell) execute_input(raw_input string) {
 	if statement.len == 0 {
 		return
 	}
-	if statement.starts_with(':') {
+	if statement.starts_with('.') {
 		s.handle_shell_command(statement)
 		return
 	}
@@ -356,27 +377,27 @@ fn (mut s Shell) handle_shell_command(line string) {
 	cmd := parts[0].to_lower()
 	arg := if parts.len > 1 { line.all_after_first(' ').trim_space() } else { '' }
 	match cmd {
-		':help' {
-			println('    :help     get command list')
-			println('    :clear     clear shell')
-			println('    :quit     exit from shell')
-			println('    :max_rows [max_rows]     set maximum number of rows for display (default: 20)')
-			println('    :mode [mode]     set output mode (default: box)')
-			println('    :stats [on|off]     toggle query stats on or off')
-			println('    :multiline     set multiline mode (default)')
-			println('    :singleline     set singleline mode')
-			println('    :schema     print database schema')
+		'.help' {
+			println('    .help     get command list')
+			println('    .clear     clear shell')
+			println('    .quit     exit from shell')
+			println('    .max_rows [max_rows]     set maximum number of rows for display (default: 20)')
+			println('    .mode [mode]     set output mode (default: box)')
+			println('    .stats [on|off]     toggle query stats on or off')
+			println('    .multiline     set multiline mode (default)')
+			println('    .singleline     set singleline mode')
+			println('    .schema     print database schema')
 		}
-		':clear' {
+		'.clear' {
 			term.clear()
 		}
-		':quit', ':exit' {
+		'.quit', '.exit' {
 			s.quit = true
 		}
-		':max_rows' {
+		'.max_rows' {
 			match arg {
 				'' {
-					eprintln(term.red('Error: :max_rows requires a number'))
+					eprintln(term.red('Error: .max_rows requires a number'))
 				}
 				else {
 					max_rows := arg.int()
@@ -385,7 +406,7 @@ fn (mut s Shell) handle_shell_command(line string) {
 				}
 			}
 		}
-		':mode' {
+		'.mode' {
 			if arg.len == 0 {
 				print_modes()
 				return
@@ -396,7 +417,7 @@ fn (mut s Shell) handle_shell_command(line string) {
 			}
 			println(term.bright_black('mode set as ${arg.to_lower()}'))
 		}
-		':stats' {
+		'.stats' {
 			match arg.to_lower() {
 				'on' {
 					s.cfg.stats = true
@@ -407,22 +428,22 @@ fn (mut s Shell) handle_shell_command(line string) {
 					println(term.bright_black('stats set as off'))
 				}
 				else {
-					eprintln(term.red('Error: :stats expects on|off'))
+					eprintln(term.red('Error: .stats expects on|off'))
 				}
 			}
 		}
-		':multiline' {
+		'.multiline' {
 			s.multiline = true
 			println(term.bright_black('multiline mode enabled'))
 		}
-		':singleline' {
+		'.singleline' {
 			s.multiline = false
 			println(term.bright_black('singleline mode enabled'))
 		}
-		':schema' {
+		'.schema' {
 			s.execute_query_statement('CALL show_tables() RETURN *;')
 		}
-		':highlight', ':render_errors', ':render_completion' {
+		'.highlight', '.render_errors', '.render_completion' {
 			println(term.bright_black('${cmd} is accepted for compatibility in this V shell.'))
 		}
 		else {
@@ -754,7 +775,7 @@ fn statement_complete(s string) bool {
 		}
 		i++
 	}
-	return s.starts_with(':')
+	return s.starts_with('.')
 }
 
 fn should_refresh_catalog(query string) bool {
@@ -809,7 +830,7 @@ fn (c &CompletionEngine) complete(prefix string) []string {
 	}
 	base, token := split_completion_input(prefix)
 	trimmed := prefix.trim_space()
-	if trimmed.starts_with(':') {
+	if trimmed.starts_with('.') {
 		mut commands := []string{}
 		for cmd in shell_commands {
 			if starts_with_ci(cmd, token) {

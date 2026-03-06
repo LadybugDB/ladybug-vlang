@@ -38,7 +38,7 @@ An interactive Ladybug shell is available at `shell-v/main.v` with:
 - colored prompt/output
 - history navigation + line editing (via V `readline`)
 - tab autocomplete (shell commands + Cypher keywords)
-- direct query args (`-q/--query`) for non-interactive runs
+- direct positional query for non-interactive runs
 
 Run interactively:
 
@@ -49,5 +49,7 @@ v run shell-v/main.v -- test.db
 Run a query directly (no stdin piping):
 
 ```bash
-v run shell-v/main.v -- test.db -q 'RETURN "hello" AS msg;'
+v run shell-v/main.v -- test.db 'RETURN "hello" AS msg;'
 ```
+
+Shell commands use `.` prefixes (for example, `.schema`, `.help`, `.quit`).
