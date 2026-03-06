@@ -15,7 +15,9 @@ jobs:
           check-latest: true
 
       - name: Download liblbug
-        run: bash scripts/download-liblbug.sh
+        run: |
+          bash scripts/download-liblbug.sh
+          cp lib/lbug.h ladybug
 
       - name: Run tests
         run: v test ./tests/

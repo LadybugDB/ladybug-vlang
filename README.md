@@ -4,11 +4,10 @@ V bindings for LadybugDB via the C API (`lbug.h`)
 
 ## Setup
 
-1. Download native binaries:
+1. Run the build script
 
 ```bash
-bash scripts/download-liblbug.sh
-cp lib/lbug.h ladybug
+./build.vsh
 ```
 
 2. Build or run V code with this module.
