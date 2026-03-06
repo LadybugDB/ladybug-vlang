@@ -1,6 +1,6 @@
 # ladybug-vlang
 
-V bindings for LadybugDB via the C API (`lbug.h`), using `ladybug-julia` as the primary API reference.
+V bindings for LadybugDB via the C API (`lbug.h`)
 
 ## Setup
 
@@ -8,6 +8,7 @@ V bindings for LadybugDB via the C API (`lbug.h`), using `ladybug-julia` as the 
 
 ```bash
 bash scripts/download-liblbug.sh
+cp lib/lbug.h ladybug
 ```
 
 2. Build or run V code with this module.
