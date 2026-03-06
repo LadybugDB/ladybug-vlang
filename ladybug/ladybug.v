@@ -15,7 +15,8 @@ struct C.lbug_system_config {
 	max_db_size          u64
 	auto_checkpoint      bool
 	checkpoint_threshold u64
-	thread_qos           u32
+	@[if macos]
+	thread_qos u32
 }
 
 @[typedef]
@@ -180,7 +181,8 @@ pub mut:
 	max_db_size          u64
 	auto_checkpoint      bool
 	checkpoint_threshold u64
-	thread_qos           u32
+	@[if macos]
+	thread_qos u32
 }
 
 fn (c SystemConfig) to_c() C.lbug_system_config {
@@ -192,21 +194,35 @@ fn (c SystemConfig) to_c() C.lbug_system_config {
 	raw.max_db_size = c.max_db_size
 	raw.auto_checkpoint = c.auto_checkpoint
 	raw.checkpoint_threshold = c.checkpoint_threshold
-	raw.thread_qos = c.thread_qos
+	$if macos {
+		raw.thread_qos = c.thread_qos
+	}
 	return raw
 }
 
 pub fn default_system_config() SystemConfig {
 	raw := C.lbug_default_system_config()
-	return SystemConfig{
-		buffer_pool_size:     raw.buffer_pool_size
-		max_num_threads:      raw.max_num_threads
-		enable_compression:   raw.enable_compression
-		read_only:            raw.read_only
-		max_db_size:          raw.max_db_size
-		auto_checkpoint:      raw.auto_checkpoint
-		checkpoint_threshold: raw.checkpoint_threshold
-		thread_qos:           raw.thread_qos
+	$if macos {
+		return SystemConfig{
+			buffer_pool_size:     raw.buffer_pool_size
+			max_num_threads:      raw.max_num_threads
+			enable_compression:   raw.enable_compression
+			read_only:            raw.read_only
+			max_db_size:          raw.max_db_size
+			auto_checkpoint:      raw.auto_checkpoint
+			checkpoint_threshold: raw.checkpoint_threshold
+			thread_qos:           raw.thread_qos
+		}
+	} $else {
+		return SystemConfig{
+			buffer_pool_size:     raw.buffer_pool_size
+			max_num_threads:      raw.max_num_threads
+			enable_compression:   raw.enable_compression
+			read_only:            raw.read_only
+			max_db_size:          raw.max_db_size
+			auto_checkpoint:      raw.auto_checkpoint
+			checkpoint_threshold: raw.checkpoint_threshold
+		}
 	}
 }
 
