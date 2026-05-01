@@ -19,6 +19,7 @@ const shell_commands = [
 	'.mode',
 	'.stats',
 	'.schema',
+	'.dbconfig',
 	'.multiline',
 	'.singleline',
 	'.highlight',
@@ -99,6 +100,7 @@ mut:
 	db           ladybug.Database
 	conn         ladybug.Connection
 	cfg          ShellConfig
+	system_cfg   ladybug.SystemConfig
 	completion   &CompletionEngine = unsafe { nil }
 	history_file string
 	last_history string
@@ -275,6 +277,7 @@ fn new_shell(cfg ShellConfig) !Shell {
 		db:           db
 		conn:         conn
 		cfg:          cfg
+		system_cfg:   sys_cfg
 		history_file: cfg.history_path
 	}
 	mut completion := &CompletionEngine{}
@@ -387,6 +390,7 @@ fn (mut s Shell) handle_shell_command(line string) {
 			println('    .multiline     set multiline mode (default)')
 			println('    .singleline     set singleline mode')
 			println('    .schema     print database schema')
+			println('    .dbconfig     print system config and db config')
 		}
 		'.clear' {
 			term.clear()
@@ -443,6 +447,9 @@ fn (mut s Shell) handle_shell_command(line string) {
 		'.schema' {
 			s.execute_query_statement('CALL show_tables() RETURN *;')
 		}
+		'.dbconfig' {
+			s.print_dbconfig()
+		}
 		'.highlight', '.render_errors', '.render_completion' {
 			println(term.bright_black('${cmd} is accepted for compatibility in this V shell.'))
 		}
@@ -450,6 +457,86 @@ fn (mut s Shell) handle_shell_command(line string) {
 			eprintln(term.red('Error: unknown command: ${cmd}'))
 		}
 	}
+}
+
+struct ConfigRow {
+	name  string
+	value string
+}
+
+fn (mut s Shell) print_dbconfig() {
+	cfg := s.system_cfg
+	mut system_rows := [
+		ConfigRow{'buffer_pool_size', cfg.buffer_pool_size.str()},
+		ConfigRow{'max_num_threads', cfg.max_num_threads.str()},
+		ConfigRow{'enable_compression', cfg.enable_compression.str()},
+		ConfigRow{'read_only', cfg.read_only.str()},
+		ConfigRow{'max_db_size', cfg.max_db_size.str()},
+		ConfigRow{'auto_checkpoint', cfg.auto_checkpoint.str()},
+		ConfigRow{'checkpoint_threshold', cfg.checkpoint_threshold.str()},
+	]
+	$if macos {
+		system_rows << ConfigRow{'thread_qos', cfg.thread_qos.str()}
+	}
+	print_config_rows('SystemConfig', system_rows)
+	println('')
+	mut db_rows := [
+		ConfigRow{'buffer_pool_size', cfg.buffer_pool_size.str()},
+		ConfigRow{'max_num_threads', cfg.max_num_threads.str()},
+		ConfigRow{'enable_compression', cfg.enable_compression.str()},
+		ConfigRow{'read_only', cfg.read_only.str()},
+		ConfigRow{'max_db_size', cfg.max_db_size.str()},
+		ConfigRow{'enable_multi_writes', s.current_setting_or('debug_enable_multi_writes',
+			'false')},
+		ConfigRow{'auto_checkpoint', s.current_setting_or('auto_checkpoint', cfg.auto_checkpoint.str())},
+		ConfigRow{'checkpoint_threshold', s.current_setting_or('checkpoint_threshold',
+			cfg.checkpoint_threshold.str())},
+		ConfigRow{'force_checkpoint_on_close', s.current_setting_or('force_checkpoint_on_close',
+			'<unavailable>')},
+		ConfigRow{'enable_spilling_to_disk', s.current_setting_or('spill_to_disk', '<unavailable>')},
+	]
+	$if macos {
+		db_rows << ConfigRow{'thread_qos', cfg.thread_qos.str()}
+	}
+	print_config_rows('DBConfig', db_rows)
+}
+
+fn print_config_rows(title string, rows []ConfigRow) {
+	println(title + ':')
+	mut name_width := 0
+	for row in rows {
+		if row.name.len > name_width {
+			name_width = row.name.len
+		}
+	}
+	for row in rows {
+		padding := ' '.repeat(name_width - row.name.len)
+		println('    ${row.name}${padding} = ${row.value}')
+	}
+}
+
+fn (mut s Shell) current_setting_or(name string, fallback string) string {
+	return s.current_setting(name) or { fallback }
+}
+
+fn (mut s Shell) current_setting(name string) !string {
+	query := "CALL current_setting('${name}') RETURN *;"
+	mut result := s.conn.query(query)!
+	defer {
+		result.close()
+	}
+	if !result.has_next() {
+		return error('setting not found: ${name}')
+	}
+	mut tuple := result.next_tuple()!
+	defer {
+		tuple.close()
+	}
+	mut value := tuple.value(0)!
+	defer {
+		value.close()
+	}
+	return value_to_text(value)
 }
 
 fn print_modes() {
@@ -1014,8 +1101,8 @@ fn should_suggest_tables(base string, token string) bool {
 	upper_token := token.to_upper()
 	return upper_token.contains(':') || upper_ctx.contains(':') || upper_base.ends_with(' FROM ')
 		|| upper_base.ends_with(' TO ') || upper_base.ends_with(' TABLE ')
-		|| upper_base.ends_with(' GRAPH ') || upper_base.ends_with('MATCH (')
-		|| upper_base.ends_with('MERGE (')
+		|| upper_base.ends_with(' GRAPH ')
+		|| upper_base.ends_with('MATCH (') || upper_base.ends_with('MERGE (')
 }
 
 fn should_suggest_properties(base string, token string) bool {
