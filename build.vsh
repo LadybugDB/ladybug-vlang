@@ -32,8 +32,8 @@ context.task(
 context.task(
 	name: 'build_app'
 	run: fn (self build.Task) ! {
-		println('❯ v -o ${app_name} shell-v/main.v')
-		if os.system('v -o ${app_name} shell-v/main.v') != 0 {
+		println('❯ v -o ${app_name} shell/main.v')
+		if os.system('v -o ${app_name} shell/main.v') != 0 {
 			return error('build app failed')
 		}
 	}

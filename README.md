@@ -34,7 +34,7 @@ v run examples/basic_usage.v
 
 ## V Shell
 
-An interactive Ladybug shell is available at `shell-v/main.v` with:
+An interactive Ladybug shell is available at `shell/main.v` with:
 - colored prompt/output
 - history navigation + line editing (via V `readline`)
 - tab autocomplete (shell commands + Cypher keywords)
@@ -43,13 +43,13 @@ An interactive Ladybug shell is available at `shell-v/main.v` with:
 Run interactively:
 
 ```bash
-v run shell-v/main.v -- test.db
+v run shell/main.v -- test.db
 ```
 
 Run a query directly (no stdin piping):
 
 ```bash
-v run shell-v/main.v -- test.db 'RETURN "hello" AS msg;'
+v run shell/main.v -- test.db 'RETURN "hello" AS msg;'
 ```
 
 Shell commands use `.` prefixes (for example, `.schema`, `.help`, `.quit`).
